@@ -18,4 +18,7 @@ Shopify/eBay push-back sync (writing fulfillment updates back to the source plat
 [Loom link here]
 
 ## Architecture
-[embed your screenshot here]
+![Multi-channel order sync](Multi-Channel%20Inventory%20Sync.JPG)
+
+## Failsafe / Error Handling
+![Error handler](Error%20Handler.JPG)
