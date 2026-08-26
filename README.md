@@ -15,7 +15,9 @@ Core order sync, deduplication, and inventory automation are fully working.
 Shopify/eBay push-back sync (writing fulfillment updates back to the source platforms) is in progress.
 
 ## Demo
-[Loom link here]
+
+-  [Order processing & inventory update](https://www.loom.com/share/e8f4242403f24870a30a69349c2d0d4a) — order comes in, gets deduplicated, matched by SKU, and inventory is updated automatically
+-  [Low-stock alert & reorder draft](https://www.loom.com/share/3349bcebbb0c43d898d0ed48e0a786ae) — when stock drops below threshold, the system posts a Slack alert and drafts a reorder email automatically
 
 ## Architecture
 ![Multi-channel order sync](Multi-Channel%20Inventory%20Sync.JPG)
