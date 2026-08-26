@@ -1,0 +1,221 @@
+{
+  "name": "Inventory Sync - Global Error Handler",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "076d2d5a-088a-4690-b0d2-22fe1a073e63",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        48,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const e = $json;\n\nreturn [{\n  json: {\n    workflowName: e.workflow?.name || 'Unknown Workflow',\n    failedNode: e.execution?.lastNodeExecuted || 'Unknown Node',\n    message: e.execution?.error?.message || 'No error message provided',\n    execUrl: e.execution?.url || 'N/A',\n    occurredAt: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "5822f4b4-03bb-48ab-b80b-49d5eb520e2c",
+      "name": "Format Error Details",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        304,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0BRJ2UVBU7",
+          "mode": "list",
+          "cachedResultName": "auradrift-inventory"
+        },
+        "text": "={{ `:red_circle: *${$json.workflowName}* failed at node *${$json.failedNode}*\\n${$json.message}\\n<${$json.execUrl}|View execution>` }}",
+        "otherOptions": {}
+      },
+      "id": "e2d5441e-41a3-4b94-899c-d0f13d3215e8",
+      "name": "Alert Ops - Workflow Failure",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [
+        560,
+        208
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "webhookId": "a139c82f-0706-4f2d-85d7-89303b3092e5",
+      "credentials": {
+        "slackApi": {
+          "id": "rZG4t42UZSBYkg4R",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "base": {
+          "__rl": true,
+          "value": "appZ7mofsrJNgWDRP",
+          "mode": "list",
+          "cachedResultName": "AuraDrift n8n Testing",
+          "cachedResultUrl": "https://airtable.com/appZ7mofsrJNgWDRP"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblienxIEN4laF1EU",
+          "mode": "list",
+          "cachedResultName": "Error Log",
+          "cachedResultUrl": "https://airtable.com/appZ7mofsrJNgWDRP/tblienxIEN4laF1EU"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "workflow_name": "={{ $json.workflowName }}",
+            "failed_node": "={{ $json.failedNode }}",
+            "error_message": "={{ $json.message }}",
+            "execution_url": "={{ $json.execUrl }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "error_id",
+              "displayName": "error_id",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false
+            },
+            {
+              "id": "workflow_name",
+              "displayName": "workflow_name",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "failed_node",
+              "displayName": "failed_node",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "error_message",
+              "displayName": "error_message",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "execution_url",
+              "displayName": "execution_url",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "occurred_at",
+              "displayName": "occurred_at",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "6f72a06d-79bc-4fbb-9683-18942156faf9",
+      "name": "Log Error to Airtable",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        560,
+        384
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "VxtA8KtqRyn2nfrm",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Format Error Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Error Details": {
+      "main": [
+        [
+          {
+            "node": "Alert Ops - Workflow Failure",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Error to Airtable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "4ec6e5e0-5170-4fc7-8bf7-9b6914f52c82",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "a15b3728865096db3c5cdbdf6d6440694f78925bd5be8904fb12ddbb5c1d1669"
+  },
+  "nodeGroups": [],
+  "id": "2X9xRp4SSzTFzlpA",
+  "tags": []
+}

@@ -1,0 +1,1778 @@
+{
+  "name": "Multi-Channel Inventory Sync & Auto-Reorder",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "const order = $json;\nconst eventType = order.cancelled_at ? 'order_cancelled' : 'order_created';\nconst lineItems = (order.line_items || []).map(li => ({\n  sku: li.sku,\n  quantity: li.quantity,\n  title: li.title\n}));\n\nreturn [{\n  json: {\n    source_channel: 'Shopify',\n    order_id: `shopify-${order.id}`,\n    event_type: eventType,\n    order_number: order.name,\n    line_items: lineItems,\n    raw_order_id: order.id\n  }\n}];"
+      },
+      "id": "82af3e93-364e-41d3-91dc-e9aa3ee52266",
+      "name": "Normalize Shopify Order",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        512
+      ]
+    },
+    {
+      "parameters": {
+        "multipleMethods": true,
+        "path": "ebbda85f-76a4-486d-a653-6a708820c0e5",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "id": "b79913d3-8cce-452e-8dd1-4f79294ba56d",
+      "name": "eBay Notification Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        48,
+        128
+      ],
+      "webhookId": "ebbda85f-76a4-486d-a653-6a708820c0e5"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.challengeResponse }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "b935531d-a888-4b2b-a867-de7080b7a9be",
+      "name": "Respond Challenge",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        944,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"received\" } }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "c0977d51-2a91-42d3-83b9-c5a5fa693cfd",
+      "name": "Respond eBay Ack",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        496,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const payload = $json.body || $json;\nconst data = (payload.notification && payload.notification.data) || payload.data || payload;\n\nconst lineItems = (data.lineItems || []).map(li => ({\n  sku: li.sku,\n  quantity: li.quantity,\n  title: li.title\n}));\n\nconst cancelState = (data.cancelStatus && data.cancelStatus.cancelState) || 'NONE_REQUESTED';\nconst eventType = cancelState === 'CANCELED' ? 'order_cancelled' : 'order_created';\nconst orderId = data.orderId;\n\nreturn [{\n  json: {\n    source_channel: 'eBay',\n    order_id: `ebay-${orderId}`,\n    event_type: eventType,\n    order_number: orderId,\n    line_items: lineItems,\n    raw_order_id: orderId\n  }\n}];"
+      },
+      "id": "04b1f2c2-f564-480f-ba16-bb72292e2125",
+      "name": "Normalize eBay Order",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        288
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "de560786-dfcc-4d5a-9128-c2842f8c1d63",
+      "name": "Merge Channels",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        944,
+        416
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "appZ7mofsrJNgWDRP",
+          "mode": "list",
+          "cachedResultName": "AuraDrift n8n Testing",
+          "cachedResultUrl": "https://airtable.com/appZ7mofsrJNgWDRP"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblvMmJzUdbsjU7r8",
+          "mode": "list",
+          "cachedResultName": "Processed Orders",
+          "cachedResultUrl": "https://airtable.com/appZ7mofsrJNgWDRP/tblvMmJzUdbsjU7r8"
+        },
+        "filterByFormula": "=={{ `{order_id} = '${$json.order_id}'` }}",
+        "options": {},
+        "sort": {
+          "property": []
+        }
+      },
+      "id": "8403be95-ea85-46e8-b496-db954633dd6d",
+      "name": "Search Processed Orders",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        1168,
+        416
+      ],
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "VxtA8KtqRyn2nfrm",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Reference the original merged order by node name rather than trusting\n// $json here, since the Airtable search above may return 0 items.\nconst items = $input.all();\nconst orderContext = $('Merge Channels').item.json;\nconst found = items.find(i => i.json && i.json.id);\n\nreturn [{\n  json: {\n    ...orderContext,\n    isDuplicate: !!found\n  }\n}];"
+      },
+      "id": "98e04853-88f0-449a-bbf2-7bd47acef6cc",
+      "name": "Check Idempotency",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1392,
+        416
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c-dup",
+              "leftValue": "={{ $json.isDuplicate }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "34c497a5-1493-4084-a551-2665d3053112",
+              "leftValue": "={{ $json.event_type }}",
+              "rightValue": "order_cancelled",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "36d42bb3-4c5f-4c87-940d-047244a9529b",
+      "name": "Already Processed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1616,
+        416
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "63d5dfbd-9102-4916-8111-8eea9033e66b",
+      "name": "Skip - Duplicate Order",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1840,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "base": {
+          "__rl": true,
+          "value": "appZ7mofsrJNgWDRP",
+          "mode": "list",
+          "cachedResultName": "AuraDrift n8n Testing",
+          "cachedResultUrl": "https://airtable.com/appZ7mofsrJNgWDRP"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblvMmJzUdbsjU7r8",
+          "mode": "list",
+          "cachedResultName": "Processed Orders",
+          "cachedResultUrl": "https://airtable.com/appZ7mofsrJNgWDRP/tblvMmJzUdbsjU7r8"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "order_id": "={{ $json.order_id }}",
+            "channel": "={{ $json.source_channel }}",
+            "event_type": "={{ $json.event_type }}",
+            "status": "processing"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "order_id",
+              "displayName": "order_id",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "channel",
+              "displayName": "channel",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "processing",
+                  "value": "processing"
+                },
+                {
+                  "name": "completed",
+                  "value": "completed"
+                },
+                {
+                  "name": "failed",
+                  "value": "failed"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "event_type",
+              "displayName": "event_type",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "received_at",
+              "displayName": "received_at",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "ecd85f83-1ef3-4baf-b36e-cbda88332f98",
+      "name": "Log New Order (Processing)",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        1840,
+        512
+      ],
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "VxtA8KtqRyn2nfrm",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "line_items",
+        "include": "allOtherFields",
+        "options": {
+          "destinationFieldName": "line_items"
+        }
+      },
+      "id": "5c3a89bd-63f6-4d35-b614-64f683860bcf",
+      "name": "Split Line Items",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        2288,
+        512
+      ]
+    },
+    {
+      "parameters": {
+        "options": {
+          "reset": false
+        }
+      },
+      "id": "c453319e-74dd-4e04-b070-86cb609a400b",
+      "name": "Loop Over Items",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        2512,
+        512
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "sku",
+              "value": "={{ $json.line_items.sku }}",
+              "type": "string"
+            },
+            {
+              "id": "a2",
+              "name": "quantity",
+              "value": "={{ $json.line_items.quantity }}",
+              "type": "number"
+            },
+            {
+              "id": "a3",
+              "name": "order_id",
+              "value": "={{ $json.fields.order_id }}",
+              "type": "string"
+            },
+            {
+              "id": "a4",
+              "name": "event_type",
+              "value": "={{ $json.fields.event_type }}",
+              "type": "string"
+            },
+            {
+              "id": "a5",
+              "name": "source_channel",
+              "value": "={{ $json.fields.channel }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "8653bbb2-0d83-4124-b7b3-efa897427341",
+      "name": "Extract SKU & Quantity",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2736,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "appZ7mofsrJNgWDRP",
+          "mode": "list",
+          "cachedResultName": "AuraDrift n8n Testing",
+          "cachedResultUrl": "https://airtable.com/appZ7mofsrJNgWDRP"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblQFRWzcY4FYMxpG",
+          "mode": "list",
+          "cachedResultName": "Inventory",
+          "cachedResultUrl": "https://airtable.com/appZ7mofsrJNgWDRP/tblQFRWzcY4FYMxpG"
+        },
+        "filterByFormula": "={{ `{sku} = '${$json.sku}'` }}",
+        "options": {},
+        "sort": {
+          "property": []
+        }
+      },
+      "id": "4840dafd-3e0e-44cf-9035-c7376ac968d2",
+      "name": "Search Inventory By SKU",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        2960,
+        432
+      ],
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "VxtA8KtqRyn2nfrm",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c-sku",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "46c2ceae-a89e-4de4-9bb3-f130d4bcfafd",
+      "name": "SKU Found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3184,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "base": {
+          "__rl": true,
+          "value": "appZ7mofsrJNgWDRP",
+          "mode": "list",
+          "cachedResultName": "AuraDrift n8n Testing",
+          "cachedResultUrl": "https://airtable.com/appZ7mofsrJNgWDRP"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tbl4OTKy33AAWcPm4",
+          "mode": "list",
+          "cachedResultName": "Unmatched SKUs",
+          "cachedResultUrl": "https://airtable.com/appZ7mofsrJNgWDRP/tbl4OTKy33AAWcPm4"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "sku": "={{ $('Extract SKU & Quantity').item.json.sku }}",
+            "order_id": "={{ $('Extract SKU & Quantity').item.json.order_id }}",
+            "quantity": "={{ $('Extract SKU & Quantity').item.json.quantity }}",
+            "source_channel": "={{ $('Extract SKU & Quantity').item.json.source_channel }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "sku",
+              "displayName": "sku",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "order_id",
+              "displayName": "order_id",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "quantity",
+              "displayName": "quantity",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "source_channel",
+              "displayName": "source_channel",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "flagged_at",
+              "displayName": "flagged_at",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "resolved",
+              "displayName": "resolved",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "boolean",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "7cb2ab35-6a79-40a2-bd73-3f2b1ba2afb9",
+      "name": "Log Unmatched SKU",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        3408,
+        336
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "VxtA8KtqRyn2nfrm",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0BRJ2UVBU7",
+          "mode": "list",
+          "cachedResultName": "auradrift-inventory"
+        },
+        "text": "={{ `:warning: Unmatched SKU on order ${$('Extract SKU & Quantity').item.json.order_id} (${$('Extract SKU & Quantity').item.json.source_channel}): *${$('Extract SKU & Quantity').item.json.sku}* x${$('Extract SKU & Quantity').item.json.quantity}. No matching Airtable inventory row - logged for manual review.` }}",
+        "otherOptions": {}
+      },
+      "id": "9825eb34-a5bf-41cb-86fe-462f428a2c64",
+      "name": "Alert Ops - Unmatched SKU",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [
+        3632,
+        336
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "webhookId": "307d6e33-6fe4-4148-9717-afdc1fa21d97",
+      "credentials": {
+        "slackApi": {
+          "id": "rZG4t42UZSBYkg4R",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $json;\n// Cancelled orders restock; created orders decrement.\nconst delta = d.event_type === 'order_cancelled' ? d.quantity : -d.quantity;\nconst newStock = d.currentStock + delta;\nconst needsReorderAlert = newStock <= d.reorderThreshold && !d.reorderAlertActive;\n\nreturn [{ json: { ...d, newStock, needsReorderAlert } }];"
+      },
+      "id": "180d05de-768d-4759-9635-dcaa875909bc",
+      "name": "Calculate New Stock Level",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3632,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "appZ7mofsrJNgWDRP",
+          "mode": "list",
+          "cachedResultName": "AuraDrift n8n Testing",
+          "cachedResultUrl": "https://airtable.com/appZ7mofsrJNgWDRP"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblQFRWzcY4FYMxpG",
+          "mode": "list",
+          "cachedResultName": "Inventory",
+          "cachedResultUrl": "https://airtable.com/appZ7mofsrJNgWDRP/tblQFRWzcY4FYMxpG"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "current_stock": "={{ $json.newStock }}",
+            "sku": "={{ $json.sku }}",
+            "id": "={{ $json.airtableRecordId }}",
+            "reorder_threshold": "={{ $json.reorderThreshold }}",
+            "product_name": "={{ $json.product_name }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false
+            },
+            {
+              "id": "sku",
+              "displayName": "sku",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "product_name",
+              "displayName": "product_name",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "current_stock",
+              "displayName": "current_stock",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "reorder_threshold",
+              "displayName": "reorder_threshold",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "reorder_alert_active",
+              "displayName": "reorder_alert_active",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "boolean",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "alert_sent_at",
+              "displayName": "alert_sent_at",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "dateTime",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "supplier_email",
+              "displayName": "supplier_email",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "0356d815-e2c3-4b3a-aa1c-5520650a7a11",
+      "name": "Update Inventory Row",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        3856,
+        528
+      ],
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "VxtA8KtqRyn2nfrm",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c-reorder",
+              "leftValue": "={{ $('Calculate New Stock Level').item.json.needsReorderAlert }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "c9ed5d80-f984-4e61-b723-441459af0e37",
+      "name": "Needs Reorder Alert?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        4080,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "appZ7mofsrJNgWDRP",
+          "mode": "list",
+          "cachedResultName": "AuraDrift n8n Testing",
+          "cachedResultUrl": "https://airtable.com/appZ7mofsrJNgWDRP"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblQFRWzcY4FYMxpG",
+          "mode": "list",
+          "cachedResultName": "Inventory",
+          "cachedResultUrl": "https://airtable.com/appZ7mofsrJNgWDRP/tblQFRWzcY4FYMxpG"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $json.airtableRecordId }}",
+            "reorder_alert_active": true,
+            "alert_sent_at": "={{ $now.toISO() }}",
+            "current_stock": "={{ $json.fields.current_stock }}",
+            "reorder_threshold": "={{ $json.fields.reorder_threshold }}",
+            "sku": "={{ $json.fields.sku }}",
+            "product_name": "={{ $json.fields.product_name }}",
+            "supplier_email": "={{ $json.fields.supplier_email }}"
+          },
+          "matchingColumns": [
+            "sku"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true
+            },
+            {
+              "id": "sku",
+              "displayName": "sku",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "product_name",
+              "displayName": "product_name",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "current_stock",
+              "displayName": "current_stock",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "reorder_threshold",
+              "displayName": "reorder_threshold",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "reorder_alert_active",
+              "displayName": "reorder_alert_active",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "boolean",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "alert_sent_at",
+              "displayName": "alert_sent_at",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "dateTime",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "last_updated",
+              "displayName": "last_updated",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false
+            },
+            {
+              "id": "supplier_email",
+              "displayName": "supplier_email",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "f81f438b-4b4f-448f-8f41-4c4ab6fd32b9",
+      "name": "Set Reorder Alert Flag",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        4304,
+        608
+      ],
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "VxtA8KtqRyn2nfrm",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0BRJ2UVBU7",
+          "mode": "list",
+          "cachedResultName": "auradrift-inventory"
+        },
+        "text": "=={{ `:rotating_light: Low stock: *${$json.fields.sku}* is at ${$json.fields.current_stock} units (threshold ${$json.fields.reorder_threshold}). Triggered by order ${$('Calculate New Stock Level').item.json.order_id} on ${$('Calculate New Stock Level').item.json.source_channel}. Reorder draft is in Gmail.` }}",
+        "otherOptions": {
+          "mrkdwn": true
+        }
+      },
+      "id": "2510a31a-55a5-4222-9226-2dbed5264f71",
+      "name": "Notify Team - Low Stock",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [
+        4528,
+        608
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "webhookId": "59540517-25ae-4c79-9580-836209fab8cc",
+      "credentials": {
+        "slackApi": {
+          "id": "rZG4t42UZSBYkg4R",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "draft",
+        "subject": "={{ `Restock Request: ${$('Calculate New Stock Level').item.json.product_name} (SKU: ${$('Calculate New Stock Level').item.json.sku})` }}",
+        "message": "={{ `Hi,\n\nWe're writing to request a restock quote for the following item:\n\nProduct: ${$('Calculate New Stock Level').item.json.product_name}\nSKU: ${$('Calculate New Stock Level').item.json.sku}\nCurrent stock: ${$('Calculate New Stock Level').item.json.newStock} units\n\nCould you please confirm current availability, unit pricing, and estimated lead time for a restock order?\n\nHappy to discuss quantities on a call if that's easier.\n\nThanks,\nInventory Team` }}",
+        "options": {}
+      },
+      "id": "5ade1ac3-5e64-4398-9fe9-2f6c35132311",
+      "name": "Draft Reorder Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        4752,
+        672
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "webhookId": "18f91245-50a7-4701-a491-ec9911ea6581",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "VXr91T2GMetF9epg",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "appZ7mofsrJNgWDRP",
+          "mode": "list",
+          "cachedResultName": "AuraDrift n8n Testing",
+          "cachedResultUrl": "https://airtable.com/appZ7mofsrJNgWDRP"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblvMmJzUdbsjU7r8",
+          "mode": "list",
+          "cachedResultName": "Processed Orders",
+          "cachedResultUrl": "https://airtable.com/appZ7mofsrJNgWDRP/tblvMmJzUdbsjU7r8"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "status": "completed",
+            "order_id": "={{ $('Split Line Items').item.json.fields.order_id }}",
+            "channel": "={{ $('Split Line Items').item.json.fields.channel }}",
+            "event_type": "={{ $('Split Line Items').item.json.fields.event_type }}"
+          },
+          "matchingColumns": [
+            "order_id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "order_id",
+              "displayName": "order_id",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "channel",
+              "displayName": "channel",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "processing",
+                  "value": "processing"
+                },
+                {
+                  "name": "completed",
+                  "value": "completed"
+                },
+                {
+                  "name": "failed",
+                  "value": "failed"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "event_type",
+              "displayName": "event_type",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "received_at",
+              "displayName": "received_at",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "c28be0e9-6a62-4a5f-9598-d412521ec134",
+      "name": "Mark Order Completed",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        2736,
+        240
+      ],
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "VxtA8KtqRyn2nfrm",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "abfdf565-700d-4fea-9fcd-e4b7011de1c7",
+      "name": "Success",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        2960,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "9b4bd443-c581-4991-bc74-4d4bb4ec3a4f",
+              "name": "fields",
+              "value": "={{ $json.fields }}",
+              "type": "object"
+            },
+            {
+              "id": "0e3a4398-36a4-4bff-94a1-3c1592fb9a07",
+              "name": "line_items",
+              "value": "={{ $('Merge Channels').item.json.line_items }}",
+              "type": "array"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2064,
+        512
+      ],
+      "id": "53fc430c-0fb4-41b4-8d6e-3bb2d80bbbba",
+      "name": "Reattach Line Items"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "d7d6dccc-9016-4b33-90d9-82f71c833f85",
+              "name": "airtableRecordId",
+              "value": "={{ $json.id }}",
+              "type": "string"
+            },
+            {
+              "id": "1bb618f5-0d96-40bd-b285-f5ec9ce8882c",
+              "name": "currentStock",
+              "value": "={{ $json.current_stock }}",
+              "type": "number"
+            },
+            {
+              "id": "89c443d7-413f-4578-8491-e405a4753632",
+              "name": "reorderThreshold",
+              "value": "={{ $json.reorder_threshold }}",
+              "type": "number"
+            },
+            {
+              "id": "825dc100-5929-4834-b8a1-0dfdd3b81e4e",
+              "name": "reorderAlertActive",
+              "value": "={{ !!$json.reorder_alert_active }}",
+              "type": "boolean"
+            },
+            {
+              "id": "c9a7dfa2-7088-4348-827f-031577154347",
+              "name": "sku",
+              "value": "={{ $json.sku }}",
+              "type": "string"
+            },
+            {
+              "id": "9a8d2bc2-e488-4756-9383-836a133c2ebe",
+              "name": "quantity",
+              "value": "={{ $('Extract SKU & Quantity').item.json.quantity }}",
+              "type": "number"
+            },
+            {
+              "id": "35bc81d6-bfe7-46cb-8562-27bdc18ba9b2",
+              "name": "order_id",
+              "value": "={{ $('Extract SKU & Quantity').item.json.order_id }}",
+              "type": "string"
+            },
+            {
+              "id": "2b72b6b3-9cdc-41a7-883d-d0dd1545806e",
+              "name": "event_type",
+              "value": "={{ $('Extract SKU & Quantity').item.json.event_type }}",
+              "type": "string"
+            },
+            {
+              "id": "7371886a-5738-4dbe-9ae4-ed65b2f95ae4",
+              "name": "source_channel",
+              "value": "={{ $('Extract SKU & Quantity').item.json.source_channel }}",
+              "type": "string"
+            },
+            {
+              "id": "b06bce78-e453-4277-a0c2-918d533971c5",
+              "name": "product_name",
+              "value": "={{ $json.product_name }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {
+          "ignoreConversionErrors": false
+        }
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3408,
+        528
+      ],
+      "id": "37745f11-7e29-45b8-8e97-dc4196e47edf",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ae61f29a-5c90-41aa-b4ae-ca91f0a1c69e",
+              "name": "challengeInput",
+              "value": "=={{ $json.query.challenge_code + $env.EBAY_VERIFICATION_TOKEN + $env.EBAY_WEBHOOK_ENDPOINT_URL }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        496,
+        96
+      ],
+      "id": "9773e5fa-7373-4885-b904-471d42f45980",
+      "name": "Build Challenge String"
+    },
+    {
+      "parameters": {
+        "value": "=={{ $json.challengeInput }}",
+        "dataPropertyName": "challengeResponse"
+      },
+      "type": "n8n-nodes-base.crypto",
+      "typeVersion": 2,
+      "position": [
+        720,
+        96
+      ],
+      "id": "0cdc3cd7-8f7c-4090-b83a-252d52b92dae",
+      "name": "Hash Challenge"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "cc3aaba8-aa30-4c20-81f5-5ff760f6511e",
+              "leftValue": "={{ $json.query.challenge_code }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        272,
+        128
+      ],
+      "id": "4a143050-5eca-420d-a015-ddc710e0544d",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "topic": "orders/create"
+      },
+      "type": "n8n-nodes-base.shopifyTrigger",
+      "typeVersion": 1,
+      "position": [
+        496,
+        480
+      ],
+      "id": "443fec91-8dee-4c21-813f-2f7ef8dc53a4",
+      "name": "Shopify Order Created",
+      "webhookId": "e8d4336b-e5e6-4365-81fa-bd5c4063324a",
+      "credentials": {
+        "shopifyOAuth2Api": {
+          "id": "ZF41Kp4fqa5fSOZC",
+          "name": "Shopify Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "topic": "orders/cancelled"
+      },
+      "type": "n8n-nodes-base.shopifyTrigger",
+      "typeVersion": 1,
+      "position": [
+        496,
+        672
+      ],
+      "id": "a9c541e5-69fb-46e3-80ad-7d61efa18102",
+      "name": "Shopify Order Cancelled",
+      "webhookId": "9050e0ea-be96-4018-8517-3f1860098dd6",
+      "credentials": {
+        "shopifyOAuth2Api": {
+          "id": "ZF41Kp4fqa5fSOZC",
+          "name": "Shopify Access Token account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Normalize Shopify Order": {
+      "main": [
+        [
+          {
+            "node": "Merge Channels",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "eBay Notification Webhook": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond eBay Ack": {
+      "main": [
+        [
+          {
+            "node": "Normalize eBay Order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize eBay Order": {
+      "main": [
+        [
+          {
+            "node": "Merge Channels",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Channels": {
+      "main": [
+        [
+          {
+            "node": "Search Processed Orders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Processed Orders": {
+      "main": [
+        [
+          {
+            "node": "Check Idempotency",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Idempotency": {
+      "main": [
+        [
+          {
+            "node": "Already Processed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Already Processed?": {
+      "main": [
+        [
+          {
+            "node": "Skip - Duplicate Order",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log New Order (Processing)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log New Order (Processing)": {
+      "main": [
+        [
+          {
+            "node": "Reattach Line Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Line Items": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [
+          {
+            "node": "Mark Order Completed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Extract SKU & Quantity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract SKU & Quantity": {
+      "main": [
+        [
+          {
+            "node": "Search Inventory By SKU",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Inventory By SKU": {
+      "main": [
+        [
+          {
+            "node": "SKU Found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SKU Found?": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Unmatched SKU",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Unmatched SKU": {
+      "main": [
+        [
+          {
+            "node": "Alert Ops - Unmatched SKU",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Alert Ops - Unmatched SKU": {
+      "main": [
+        []
+      ]
+    },
+    "Calculate New Stock Level": {
+      "main": [
+        [
+          {
+            "node": "Update Inventory Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Inventory Row": {
+      "main": [
+        [
+          {
+            "node": "Needs Reorder Alert?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs Reorder Alert?": {
+      "main": [
+        [
+          {
+            "node": "Set Reorder Alert Flag",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Reorder Alert Flag": {
+      "main": [
+        [
+          {
+            "node": "Notify Team - Low Stock",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Team - Low Stock": {
+      "main": [
+        [
+          {
+            "node": "Draft Reorder Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Draft Reorder Email": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Order Completed": {
+      "main": [
+        [
+          {
+            "node": "Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reattach Line Items": {
+      "main": [
+        [
+          {
+            "node": "Split Line Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Calculate New Stock Level",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Challenge String": {
+      "main": [
+        [
+          {
+            "node": "Hash Challenge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hash Challenge": {
+      "main": [
+        [
+          {
+            "node": "Respond Challenge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Build Challenge String",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond eBay Ack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shopify Order Created": {
+      "main": [
+        [
+          {
+            "node": "Normalize Shopify Order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shopify Order Cancelled": {
+      "main": [
+        [
+          {
+            "node": "Normalize Shopify Order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "timeSavedMode": "fixed",
+    "errorWorkflow": "2X9xRp4SSzTFzlpA",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "afc0759e-6b59-4031-a86b-4f3477594ea7",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "a15b3728865096db3c5cdbdf6d6440694f78925bd5be8904fb12ddbb5c1d1669"
+  },
+  "nodeGroups": [],
+  "id": "TBKIqHeTRKt4jis4",
+  "tags": []
+}
