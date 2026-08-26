@@ -19,10 +19,10 @@ Automates multi-channel order processing for stores selling on both Shopify and 
 - Unmatched SKUs are logged and flagged to the ops team instead of silently failing
 
 **4. Low-stock handling**
-- When an item's updated stock drops below its threshold, the system flags it, posts a Slack alert, and drafts a reorder email — no manual monitoring required
+- When an item's updated stock drops below its threshold, the system flags it, posts a Slack alert, and drafts a reorder email, no manual monitoring required
 
 **5. Global error handling**
-- Any failure anywhere in the main workflow is caught by a dedicated error-handling workflow, which logs the failure to Airtable and posts an alert to Slack with the failed node and a link to the execution — so failures are visible immediately instead of silently breaking inventory data
+- Any failure anywhere in the main workflow is caught by a dedicated error-handling workflow, which logs the failure to Airtable and posts an alert to Slack with the failed node and a link to the execution, so failures are visible immediately instead of silently breaking inventory data
 
 ## Status
 Core order ingestion, deduplication, SKU matching, inventory updates, low-stock alerting, and global error handling are fully working end-to-end. Writing fulfillment/tracking updates back to Shopify and eBay (the "push-back" sync) is still in progress.
