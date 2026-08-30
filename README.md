@@ -1,39 +1,49 @@
-# shopify-ebay-order-sync-automation
-n8n workflow automating multi-channel order sync, deduplication, and inventory management for Shopify + eBay stores
+# Multi-Channel Inventory Sync & Auto-Reorder (Shopify + eBay)
 
-## What it does
+An n8n workflow that keeps stock in sync across Shopify and eBay, stops the same item from getting oversold on both platforms, and automatically flags low stock before it becomes a stockout — with its own error-handling workflow watching in the background.
 
-Automates multi-channel order processing for stores selling on both Shopify and eBay:
+## Why this exists
 
-**1. Order ingestion**
-- Listens for `Shopify Order Created` / `Shopify Order Cancelled` webhooks, and eBay's order notification webhook (including handling eBay's required challenge-response handshake automatically)
-- Normalizes both sources into one common order format (channel, order ID, event type, line items)
+If you sell the same SKU on Shopify and eBay, a sale on one doesn't touch stock on the other. Without something bridging that gap, you'll eventually oversell — accept an eBay order for something that just sold out on Shopify five minutes ago. This workflow treats Airtable as the single source of truth and pushes every stock change to whichever channel didn't just make the sale.
 
-**2. Deduplication (idempotency)**
-- Every incoming order is checked against an Airtable log of already-processed orders before anything else happens
-- Duplicate deliveries of the same order are skipped safely; genuine new orders and cancellations are logged and processed
+## How it flows
 
-**3. Inventory sync**
-- Each line item's SKU is looked up against the inventory table
-- Matched SKUs have their stock level recalculated and updated automatically
-- Unmatched SKUs are logged and flagged to the ops team instead of silently failing
+**Orders come in** from both Shopify (via its native trigger) and eBay (via a webhook that also handles eBay's required one-time verification handshake — it needs to respond to a GET challenge before eBay will even start sending real notifications, and both request types share the same endpoint).
 
-**4. Low-stock handling**
-- When an item's updated stock drops below its threshold, the system flags it, posts a Slack alert, and drafts a reorder email, no manual monitoring required
+**Every order gets normalized** into one shape regardless of which platform it came from, then checked against an Airtable log before anything else happens — this is what makes duplicate webhook deliveries and retries harmless instead of dangerous. Cancelled orders and anything already processed get skipped here.
 
-**5. Global error handling**
-- Any failure anywhere in the main workflow is caught by a dedicated error-handling workflow, which logs the failure to Airtable and posts an alert to Slack with the failed node and a link to the execution, so failures are visible immediately instead of silently breaking inventory data
+**Each line item is looked up by SKU.** If it matches inventory, stock gets recalculated and updated. If it doesn't match anything, it's logged separately and someone gets pinged on Slack instead of the order silently failing to update stock.
+
+**The new stock number gets pushed to the other channel** — not the one where the sale happened, since that channel already decremented itself. A small safety buffer is subtracted before pushing, so there's always a little headroom in case two orders land on different channels close together.
+
+**If stock drops below the reorder threshold**, it gets flagged, Slack gets a heads-up, and a reorder email gets drafted to the supplier (drafted, not sent — someone still needs to actually approve it before it goes out).
+
+**A separate error-handling workflow** catches anything that breaks anywhere in this pipeline, logs it to Airtable, and posts to Slack with the failed node and a link straight to the execution.
+
+## A few decisions worth calling out
+
+- Deduplication happens before any stock math runs, not after — order matters here.
+- Pushing to the *other* channel (not the one that sold) avoids double-decrementing stock that was already reduced natively.
+- Reorder emails are drafts, not auto-sends — automation should flag the decision, not make it.
+- One shared error handler instead of per-node error handling, so failures are visible immediately instead of showing up later as a stock discrepancy nobody can explain.
+
+## Stack
+
+n8n · Airtable · Shopify Admin API · eBay Sell Inventory API (OAuth2) · Slack · Gmail
 
 ## Status
-Core order ingestion, deduplication, SKU matching, inventory updates, low-stock alerting, and global error handling are fully working end-to-end. Writing fulfillment/tracking updates back to Shopify and eBay (the "push-back" sync) is still in progress.
+
+End-to-end working: order intake, dedup, SKU matching, stock updates, push-back to both Shopify and eBay, low-stock alerts, and error handling — tested against Shopify's live API and eBay's sandbox.
 
 ## Demo
 
--  [Order processing & inventory update](https://www.loom.com/share/e8f4242403f24870a30a69349c2d0d4a) — order comes in, gets deduplicated, matched by SKU, and inventory is updated automatically
--  [Low-stock alert & reorder draft](https://www.loom.com/share/3349bcebbb0c43d898d0ed48e0a786ae) — when stock drops below threshold, the system posts a Slack alert and drafts a reorder email automatically
+- [Order processing & inventory update](https://www.loom.com/share/e8f4242403f24870a30a69349c2d0d4a)
+- [Low-stock alert & reorder draft](https://www.loom.com/share/3349bcebbb0c43d898d0ed48e0a786ae)
 
 ## Architecture
+
 ![Multi-channel order sync](Multi-Channel%20Inventory%20Sync.JPG)
 
-## Failsafe / Error Handling
+## Error Handling
+
 ![Error handler](Error%20Handler.JPG)
