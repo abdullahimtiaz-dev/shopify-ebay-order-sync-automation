@@ -42,8 +42,8 @@ End-to-end working: order intake, dedup, SKU matching, stock updates, push-back 
 
 ## Architecture
 
-![Multi-channel order sync]()
+![Multi-channel order sync](Multi%20Channel%20Inventory%20Sync%20Aut.jpg)
 
 ## Error Handling
 
-![Error handler]()
+![Error handler](Global%20Error%20Handler.jpg)
